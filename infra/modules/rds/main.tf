@@ -25,7 +25,7 @@ resource "aws_security_group" "rds" {
 resource "aws_db_instance" "main" {
   identifier        = "${var.project_name}-${var.environment}"
   engine            = "postgres"
-  engine_version    = "16.3"
+  engine_version    = "16.14"
   instance_class    = "db.t3.micro" # FREE TIER
   allocated_storage = 20            # FREE TIER máximo
 

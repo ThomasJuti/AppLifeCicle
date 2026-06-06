@@ -12,11 +12,12 @@ resource "aws_security_group" "ecs_tasks" {
   name   = "${var.project_name}-ecs-sg"
   vpc_id = var.vpc_id
 
+  # Solo el ALB puede alcanzar el puerto de la app; ya no se expone a Internet.
   ingress {
-    from_port   = 9090
-    to_port     = 9090
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = var.app_port
+    to_port         = var.app_port
+    protocol        = "tcp"
+    security_groups = [var.alb_security_group_id]
   }
 
   egress {
@@ -51,7 +52,7 @@ resource "aws_iam_role_policy_attachment" "ecs_task_execution" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-# Permite al rol de ejecución leer la contraseña desde Secrets Manager
+# Permite al rol de ejecución leer los secretos (BD, JWT y admin) desde Secrets Manager
 resource "aws_iam_role_policy" "ecs_secrets_access" {
   name = "${var.project_name}-ecs-secrets"
   role = aws_iam_role.ecs_task_execution.id
@@ -61,7 +62,7 @@ resource "aws_iam_role_policy" "ecs_secrets_access" {
     Statement = [{
       Effect   = "Allow"
       Action   = ["secretsmanager:GetSecretValue"]
-      Resource = [var.db_secret_arn]
+      Resource = [var.db_secret_arn, var.jwt_secret_arn, var.admin_secret_arn]
     }]
   })
 }
@@ -175,11 +176,16 @@ resource "aws_ecs_task_definition" "app" {
     environment = [
       { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
       { name = "DATABASE_URL", value = var.db_url },
-      { name = "DATABASE_USER", value = var.db_username }
+      { name = "DATABASE_USER", value = var.db_username },
+      { name = "ADMIN_USERNAME", value = var.admin_username },
+      # El frontend se sirve desde el mismo origen (CloudFront), no hay CORS cross-origin.
+      { name = "CORS_ALLOWED_ORIGINS", value = "" }
     ]
-    # La contraseña NO viaja en la definición: ECS la inyecta desde Secrets Manager
+    # Los secretos NO viajan en la definición: ECS los inyecta desde Secrets Manager
     secrets = [
-      { name = "DATABASE_PASSWORD", valueFrom = "${var.db_secret_arn}:password::" }
+      { name = "DATABASE_PASSWORD", valueFrom = "${var.db_secret_arn}:password::" },
+      { name = "JWT_SECRET", valueFrom = var.jwt_secret_arn },
+      { name = "ADMIN_PASSWORD", valueFrom = var.admin_secret_arn }
     ]
     logConfiguration = {
       logDriver = "awslogs"
@@ -210,6 +216,13 @@ resource "aws_ecs_service" "app" {
     weight            = 1
   }
 
+  load_balancer {
+    target_group_arn = var.target_group_arn
+    container_name   = var.project_name
+    container_port   = var.app_port
+  }
+
+  # El pipeline de CD registra nuevas task definitions; Terraform no las pisa.
   lifecycle {
     ignore_changes = [task_definition]
   }

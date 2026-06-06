@@ -1,6 +1,17 @@
-aws_region   = "us-east-1"
+aws_region   = "us-east-2"
 project_name = "customers-api"
 environment  = "prod"
-db_username  = "CHANGE_ME"
-db_password  = "CHANGE_ME_STRONG_PASSWORD"
-app_image    = "123456789.dkr.ecr.us-east-1.amazonaws.com/customers-api-prod:latest"
+
+db_username = "CHANGE_ME"
+db_password = "CHANGE_ME_STRONG_PASSWORD"
+
+# Para el PRIMER apply usa un placeholder publico (el repo ECR aun no tiene imagen).
+# El pipeline de CD publicara la imagen real y actualizara el servicio ECS.
+app_image = "public.ecr.aws/docker/library/busybox:latest"
+
+# Repositorio de GitHub autorizado a desplegar via OIDC
+github_owner = "ThomasJuti"
+github_repo  = "AppLifeCicle"
+
+# Pon false si el OIDC provider de GitHub ya existe en tu cuenta AWS
+create_oidc_provider = true
