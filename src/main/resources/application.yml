@@ -1,0 +1,51 @@
+spring:
+  application:
+    name: customers-api
+  jpa:
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: when-authorized
+      probes:
+        enabled: true
+  info:
+    env:
+      enabled: true
+    java:
+      enabled: true
+    build:
+      enabled: true
+
+info:
+  app:
+    name: ${spring.application.name}
+    version: "@project.version@"
+    environment: ${app.environment}
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operationsSorter: method
+
+app:
+  security:
+    jwt:
+      secret: ${JWT_SECRET:dev-secret-change-me-please-0123456789-abcdef}
+      expiration-seconds: ${JWT_EXPIRATION_SECONDS:3600}
+    user:
+      username: ${ADMIN_USERNAME:admin}
+      password: ${ADMIN_PASSWORD:admin123}
+    cors:
+
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}

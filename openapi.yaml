@@ -1,0 +1,91 @@
+openapi: 3.0.1
+info:
+  title: Customers API - DEV
+  description: Customer registration service running in DEV mode
+  contact:
+    name: Bank Dev Team
+    email: dev@bank.com
+  version: 1.0.0
+servers:
+- url: /
+  description: "Current environment: DEV"
+tags:
+- name: Customers
+  description: Customer registration and retrieval operations
+paths:
+  /api/customers:
+    get:
+      tags:
+      - Customers
+      summary: List all customers
+      description: Returns all registered customers.
+      operationId: getAll
+      responses:
+        "200":
+          description: List of customers
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CustomerResponse"
+    post:
+      tags:
+      - Customers
+      summary: Create a new customer
+      description: Registers a new customer. Email must be unique.
+      operationId: create
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateCustomerRequest"
+        required: true
+      responses:
+        "201":
+          description: Customer created successfully
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+        "400":
+          description: Validation error
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+        "409":
+          description: Customer with email already exists
+          content:
+            '*/*':
+              schema:
+                $ref: "#/components/schemas/CustomerResponse"
+components:
+  schemas:
+    CreateCustomerRequest:
+      required:
+      - email
+      - name
+      type: object
+      properties:
+        name:
+          maxLength: 100
+          minLength: 2
+          type: string
+        email:
+          maxLength: 150
+          minLength: 0
+          type: string
+    CustomerResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+        createdAt:
+          type: string
+          format: date-time

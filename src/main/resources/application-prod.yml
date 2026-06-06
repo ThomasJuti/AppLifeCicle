@@ -1,0 +1,38 @@
+server:
+  port: 9090
+
+spring:
+  application:
+    name: customers-prod
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/customersdb}
+    username: ${DATABASE_USER:customers_user}
+    password: ${DATABASE_PASSWORD:customers_pass}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+      connection-timeout: 30000
+      idle-timeout: 600000
+      max-lifetime: 1800000
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+logging:
+  level:
+    root: WARN
+    com.bank.customers: INFO
+  config: classpath:logback-spring.xml
+
+app:
+  environment: PROD
+  message: "Running in PROD mode - PostgreSQL active"
+
+banner:
+  location: classpath:banner-prod.txt

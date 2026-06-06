@@ -1,0 +1,60 @@
+# ===== Java / Maven =====
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.log
+hs_err_pid*
+
+# ===== Node / Frontend =====
+node_modules/
+dist/
+dist-ssr/
+*.local
+.vite/
+
+# ===== Terraform =====
+# El directorio de plugins/providers descargados (¡pesa cientos de MB!)
+**/.terraform/*
+# Estado: NUNCA se sube (puede contener secretos en texto plano)
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+# Variables reales (el .example sí se versiona)
+*.tfvars
+*.tfvars.json
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# El lock de providers SÍ se versiona (reproducibilidad)
+!**/.terraform.lock.hcl
+
+# ===== Secretos / entorno =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.aws/
+
+# ===== IDE / SO =====
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+
+# ===== Herramientas de IA / agentes (no forman parte del proyecto) =====
+.agents/
+.claude/
+.cursor/
+.aider*
+.github/copilot-instructions.md
+**/skills/
+CLAUDE.md
+AGENTS.md
+skills-lock.json
