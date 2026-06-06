@@ -1,11 +1,10 @@
 import { useState } from 'react'
-import { useNavigate, useLocation } from 'react-router-dom'
+import { Navigate, useLocation } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { apiErrorMessage } from '../api/client'
 
 export default function Login() {
-  const { login } = useAuth()
-  const navigate = useNavigate()
+  const { login, isAuthenticated } = useAuth()
   const location = useLocation()
   const from = location.state?.from?.pathname || '/'
 
@@ -14,13 +13,16 @@ export default function Login() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
 
+  if (isAuthenticated) {
+    return <Navigate to={from} replace />
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setError(null)
     setLoading(true)
     try {
       await login(username, password)
-      navigate(from, { replace: true })
     } catch (err) {
       setError(apiErrorMessage(err, 'No se pudo iniciar sesión'))
     } finally {

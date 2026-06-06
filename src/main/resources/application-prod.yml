@@ -34,6 +34,9 @@ logging:
 app:
   environment: PROD
   message: "Running in PROD mode - PostgreSQL active"
+  security:
+    cors:
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
 
 banner:
   location: classpath:banner-prod.txt

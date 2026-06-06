@@ -177,9 +177,7 @@ resource "aws_ecs_task_definition" "app" {
       { name = "SPRING_PROFILES_ACTIVE", value = "prod" },
       { name = "DATABASE_URL", value = var.db_url },
       { name = "DATABASE_USER", value = var.db_username },
-      { name = "ADMIN_USERNAME", value = var.admin_username },
-      # El frontend se sirve desde el mismo origen (CloudFront), no hay CORS cross-origin.
-      { name = "CORS_ALLOWED_ORIGINS", value = "" }
+      { name = "ADMIN_USERNAME", value = var.admin_username }
     ]
     # Los secretos NO viajan en la definición: ECS los inyecta desde Secrets Manager
     secrets = [
