@@ -1,296 +1,469 @@
-# customers-api — Guía de pruebas locales
+# LifeCicleApp — Consola de Gestión de Clientes
 
-API de registro de clientes con **arquitectura hexagonal**, configuración multi-ambiente
-(DEV/PROD), observabilidad y despliegue en AWS Free Tier. Esta guía te lleva paso a paso
-para **probar todo lo construido en tu máquina** (Windows / PowerShell).
+![Java](https://img.shields.io/badge/Java-21-orange?logo=openjdk)
+![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.5-brightgreen?logo=springboot)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)
+![AWS](https://img.shields.io/badge/AWS-Cloud-FF9900?logo=amazonaws)
 
-> Para cada bloque: abre **PowerShell** en la carpeta del proyecto:
-> ```powershell
-> cd C:\Users\thoma_vaulmzi\OneDrive\Documentos\Kata\customers-api
-> ```
+**LifeCicleApp** es una solución fullstack para la administración de clientes en entornos bancarios y corporativos. Combina una API REST segura con arquitectura hexagonal, un frontend React moderno y un pipeline de despliegue automatizado en AWS.
 
 ---
 
-## 0. Prerrequisitos
+## Tabla de Contenidos
 
-Verifica que tienes todo (ya validado en este equipo):
-
-```powershell
-java --version          # 21.x
-mvn --version           # 3.9.x
-docker --version        # 28.x
-terraform version       # 1.15.x  (abre una terminal NUEVA tras instalarlo)
-```
-
-> **Importante — Docker Desktop debe estar abierto** para las fases de Docker y los tests
-> de Testcontainers. Si `docker info` da error de "pipe", abre Docker Desktop y espera a
-> que el icono esté en verde.
-
-> ℹ️ **Puertos:** el perfil **DEV usa el 8081** (estándar de este proyecto, ya configurado en
-> `application-dev.yml`) y **PROD usa el 9090**. Se eligió 8081 para DEV porque en este equipo
-> Apache (XAMPP) ocupa el 8080. Comprueba que el 8081 esté libre: `netstat -ano | findstr :8081`
+- [Arquitectura del Sistema](#-arquitectura-del-sistema)
+- [Características Principales](#-características-principales)
+- [Tecnologías y Stack](#-tecnologías-y-stack)
+- [Modelo de Datos](#-modelo-de-datos)
+- [API Reference](#-api-reference)
+- [Guía de Instalación Local](#-guía-de-instalación-local)
+- [Despliegue en Nube (AWS)](#️-despliegue-en-nube-aws)
+- [CI/CD con GitHub Actions](#-cicd-con-github-actions)
+- [Usuario de Acceso](#-usuario-de-acceso)
+- [Licencia](#-licencia)
 
 ---
 
-## 1. Ejecutar todos los tests (unitarios + integración)
+## Arquitectura del Sistema
 
-Levanta automáticamente un PostgreSQL real en Docker (Testcontainers).
+El sistema sigue una **arquitectura hexagonal (ports & adapters)** desacoplada, desplegada en AWS con un único punto de entrada HTTPS.
 
-```powershell
-.\mvnw.cmd test
+```
+                    ┌─────────────────────────────────────┐
+                    │         Usuario / Navegador         │
+                    └──────────────────┬──────────────────┘
+                                       │ HTTPS
+                    ┌──────────────────▼──────────────────┐
+                    │           CloudFront (CDN)          │
+                    │   https://d2bmeirll4v0n0.cloudfront  │
+                    └───┬──────────────────────────┬──────┘
+                        │ /*                       │ /api/*
+              ┌─────────▼─────────┐     ┌──────────▼──────────┐
+              │   S3 (Frontend)   │     │   ALB (HTTP :80)    │
+              │  React + Vite     │     └──────────┬──────────┘
+              │  SPA estática     │                │
+              └───────────────────┘     ┌──────────▼──────────┐
+                                        │  ECS (EC2 t3.micro) │
+                                        │  Spring Boot :9090  │
+                                        └──────────┬──────────┘
+                                                   │
+                                        ┌──────────▼──────────┐
+                                        │  RDS PostgreSQL 16  │
+                                        │  (subred privada)   │
+                                        └─────────────────────┘
 ```
 
-**Qué esperar:** `Tests run: 10, Failures: 0, Errors: 0`
-- 3 tests del servicio de dominio (Mockito)
-- 4 tests del controller REST (`@WebMvcTest`)
-- 3 tests de persistencia contra PostgreSQL 16 (Testcontainers + migración Flyway real)
+### Componentes
+
+| Capa | Tecnología | Responsabilidad |
+|------|------------|-----------------|
+| **Frontend (SPA)** | React 18 + Vite | UI de login y consola CRUD de clientes |
+| **CDN / Proxy** | CloudFront | HTTPS, enrutamiento `/api/*` → backend, `/*` → S3 |
+| **Backend (API)** | Spring Boot 3 en ECS/EC2 | Lógica de negocio, seguridad JWT, persistencia |
+| **Base de Datos** | PostgreSQL 16 (RDS) | Persistencia transaccional con Flyway |
+| **Secretos** | AWS Secrets Manager | Credenciales BD, JWT y admin |
+| **Contenedores** | ECR + Docker | Imagen multi-stage optimizada (Java 21) |
+| **CI/CD** | GitHub Actions + OIDC | Build, test, deploy automático en push a `main` |
+
+### Enrutamiento CloudFront
+
+| Ruta | Destino | Descripción |
+|------|---------|-------------|
+| `/*` | S3 | Frontend estático (React) |
+| `/api/*` | ALB → ECS | API REST |
+| `/actuator/*` | ALB → ECS | Health checks |
+| `/swagger-ui/*` | ALB → ECS | Documentación interactiva |
+| `/api-docs/*` | ALB → ECS | OpenAPI JSON |
 
 ---
 
-## 2. Probar el modo DEV (H2 en memoria, puerto 8081)
+## Características Principales
 
-### Arrancar
-```powershell
-.\mvnw.cmd spring-boot:run "-Dspring-boot.run.profiles=dev"
-```
+### Seguridad y Control de Acceso
 
-> El puerto 8081 ya está fijado en `application-dev.yml`, no hace falta pasar nada extra.
-> Usa **`curl.exe`** (no `curl` a secas: en PowerShell es un alias distinto).
+- **Autenticación JWT**: sesiones stateless con tokens Bearer (JJWT 0.12).
+- **Spring Security 6**: filtro JWT, rutas públicas para login y actuator.
+- **Password Hashing**: BCrypt para credenciales del administrador.
+- **CORS configurable**: orígenes permitidos vía variable de entorno.
+- **Secrets Manager**: credenciales nunca en código ni en task definitions.
 
-### Probar los endpoints (en OTRA terminal)
+### Gestión de Clientes (CRUD)
 
-```powershell
-# Health (H2 visible porque DEV expone detalles)
-curl.exe http://localhost:8081/actuator/health
+- **Crear** clientes con validación de nombre y email.
+- **Listar** toda la cartera con búsqueda en tiempo real.
+- **Editar** nombre y email (unicidad garantizada).
+- **Eliminar** con confirmación en la UI.
+- **Email único**: constraint a nivel de dominio y base de datos.
 
-# Crear cliente -> 201
-curl.exe -X POST http://localhost:8081/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Juan Perez\",\"email\":\"juan@email.com\"}"
+### Observabilidad y Calidad
 
-# Listar -> el cliente creado
-curl.exe http://localhost:8081/api/customers
+- **Actuator**: health, info, metrics.
+- **OpenAPI / Swagger UI**: documentación interactiva de la API.
+- **Logs estructurados**: JSON en PROD (Logstash encoder), texto en DEV.
+- **Flyway**: migraciones versionadas de esquema.
+- **Tests**: unitarios, `@WebMvcTest` y Testcontainers con PostgreSQL real.
 
-# Email duplicado -> 409 (ProblemDetail RFC 7807)
-curl.exe -X POST http://localhost:8081/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Juan Perez\",\"email\":\"juan@email.com\"}"
+### Frontend (Consola)
 
-# Email inválido -> 400 con errors.email
-curl.exe -X POST http://localhost:8081/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Ana\",\"email\":\"no-es-email\"}"
-```
-
-### En el navegador
-- **Swagger UI:** http://localhost:8081/swagger-ui.html
-- **H2 Console:** http://localhost:8081/h2-console
-  - JDBC URL: `jdbc:h2:mem:customersdb;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false`
-  - User: `sa` · Password: *(vacío)*
-- **OpenAPI JSON:** http://localhost:8081/api-docs
-
-### Detener
-En la terminal donde corre la app: `Ctrl + C`.
+- Login con redirección declarativa post-autenticación.
+- Dashboard con estadísticas, búsqueda y formulario inline.
+- Token JWT en `localStorage` con interceptor Axios.
 
 ---
 
-## 3. Probar el modo PROD (Docker Compose + PostgreSQL real)
+## Tecnologías y Stack
 
-Levanta PostgreSQL 16 + la app empaquetada en imagen Docker, en el **puerto 9090**.
+### Backend (Java Ecosystem)
 
-### Construir y levantar
-```powershell
+| Componente | Versión |
+|------------|---------|
+| Framework | Spring Boot 3.3.5 |
+| Lenguaje | Java 21 (LTS) |
+| Arquitectura | Hexagonal (Ports & Adapters) |
+| ORM | Hibernate / Spring Data JPA |
+| Seguridad | Spring Security 6 + JJWT |
+| Base de Datos (prod) | PostgreSQL 16 |
+| Base de Datos (dev) | H2 en memoria |
+| Migraciones | Flyway |
+| Documentación | SpringDoc OpenAPI 2.6 |
+| Tests | JUnit 5, Mockito, Testcontainers |
+| Build | Maven 3.9 (wrapper incluido) |
+
+### Frontend (Modern Web)
+
+| Componente | Versión |
+|------------|---------|
+| Framework | React 18 |
+| Build Tool | Vite 5 |
+| Estilos | CSS custom (design system propio) |
+| HTTP Client | Axios (interceptores JWT) |
+| Routing | React Router DOM 6 |
+
+### Infraestructura (AWS)
+
+| Servicio | Uso |
+|----------|-----|
+| CloudFront | CDN + reverse proxy unificado |
+| S3 | Hosting frontend estático |
+| ALB | Balanceador hacia ECS |
+| ECS (EC2) | Orquestación de contenedores |
+| ECR | Registro de imágenes Docker |
+| RDS | PostgreSQL gestionado |
+| Secrets Manager | Gestión de secretos |
+| CloudWatch | Logs de aplicación |
+| IAM (OIDC) | Autenticación CI/CD sin access keys |
+
+### IaC y Pipelines
+
+| Herramienta | Uso |
+|-------------|-----|
+| Terraform 1.7+ | Infraestructura como código (módulos: VPC, ALB, ECS, RDS, S3, CloudFront, CI/CD) |
+| GitHub Actions | CI (build + test) y CD (deploy automático) |
+| Docker | Imagen multi-stage con layertools |
+
+---
+
+## Modelo de Datos
+
+Esquema relacional simple, orientado a integridad y unicidad de email.
+
+### Tabla `customers`
+
+| Columna | Tipo | Restricción |
+|---------|------|-------------|
+| `id` | UUID | PK |
+| `name` | VARCHAR(100) | NOT NULL |
+| `email` | VARCHAR(150) | NOT NULL, UNIQUE |
+| `created_at` | TIMESTAMP | NOT NULL |
+
+```sql
+CREATE TABLE customers (
+    id         UUID         NOT NULL PRIMARY KEY,
+    name       VARCHAR(100) NOT NULL,
+    email      VARCHAR(150) NOT NULL UNIQUE,
+    created_at TIMESTAMP    NOT NULL
+);
+```
+
+---
+
+## API Reference
+
+### Autenticación
+
+| Método | Endpoint | Auth | Descripción |
+|--------|----------|------|-------------|
+| `POST` | `/api/auth/login` | No | Inicia sesión y retorna JWT |
+| `GET` | `/api/auth/me` | Bearer | Usuario autenticado actual |
+
+**Request login:**
+```json
+{
+  "username": "admin",
+  "password": "admin123"
+}
+```
+
+**Response login:**
+```json
+{
+  "token": "eyJhbGciOiJIUzUxMiJ9...",
+  "tokenType": "Bearer",
+  "expiresIn": 3600,
+  "username": "admin"
+}
+```
+
+### Clientes
+
+| Método | Endpoint | Auth | Descripción |
+|--------|----------|------|-------------|
+| `POST` | `/api/customers` | Bearer | Crea un nuevo cliente |
+| `GET` | `/api/customers` | Bearer | Lista todos los clientes |
+| `PUT` | `/api/customers/{id}` | Bearer | Actualiza un cliente |
+| `DELETE` | `/api/customers/{id}` | Bearer | Elimina un cliente |
+
+**Request crear cliente:**
+```json
+{
+  "name": "Juan Pérez",
+  "email": "juan@email.com"
+}
+```
+
+**Response cliente:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "name": "Juan Pérez",
+  "email": "juan@email.com",
+  "createdAt": "2026-06-06T22:00:00Z"
+}
+```
+
+### Operaciones
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `GET` | `/actuator/health` | Estado de salud de la aplicación |
+| `GET` | `/swagger-ui.html` | Documentación interactiva Swagger |
+| `GET` | `/api-docs` | Especificación OpenAPI en JSON |
+
+---
+
+## Guía de Instalación Local
+
+### Prerrequisitos
+
+- Java JDK **21+**
+- Node.js **18+** (recomendado 20)
+- Maven (incluido via `mvnw`)
+- Docker Desktop (para tests con Testcontainers y modo PROD local)
+
+### 1. Clonar el repositorio
+
+```bash
+git clone https://github.com/ThomasJuti/AppLifeCicle.git
+cd customers-api
+```
+
+### 2. Backend — Modo DEV (H2 en memoria, puerto 8081)
+
+```bash
+chmod +x mvnw
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+```
+
+| Recurso | URL |
+|---------|-----|
+| API | http://localhost:8081 |
+| Swagger UI | http://localhost:8081/swagger-ui.html |
+| H2 Console | http://localhost:8081/h2-console |
+| Health | http://localhost:8081/actuator/health |
+
+> El puerto **8081** se usa en DEV para evitar conflicto con otros servicios en el 8080.
+
+### 3. Frontend — Modo desarrollo
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Crear `frontend/.env` (opcional, ya apunta a 8081 por defecto):
+
+```env
+VITE_API_URL=http://localhost:8081
+```
+
+| Recurso | URL |
+|---------|-----|
+| Consola | http://localhost:5173 |
+
+### 4. Backend — Modo PROD local (Docker Compose + PostgreSQL)
+
+```bash
 docker compose up -d --build
 ```
-Espera ~30-45 s a que la app quede *healthy*:
-```powershell
-docker compose ps
+
+| Recurso | URL |
+|---------|-----|
+| API | http://localhost:9090 |
+| Swagger UI | http://localhost:9090/swagger-ui.html |
+
+```bash
+docker compose down -v   # Detener y limpiar volúmenes
 ```
 
-### Probar (puerto 9090)
-```powershell
-# Health (en PROD no muestra detalles a anónimos -> solo status:UP)
-curl.exe http://localhost:9090/actuator/health
+### 5. Ejecutar tests
 
-# Crear cliente -> 201 (se persiste en PostgreSQL)
-curl.exe -X POST http://localhost:9090/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Maria Lopez\",\"email\":\"maria@email.com\"}"
-
-# Listar
-curl.exe http://localhost:9090/api/customers
+```bash
+./mvnw test
 ```
 
-### Ver los logs JSON estructurados (diferencia clave con DEV)
-```powershell
-docker compose logs app
-```
-En PROD verás logs en **JSON** (campos `@timestamp`, `level`, `app:customers-prod`, `env:PROD`),
-mientras que DEV los muestra como texto legible con colores.
-
-### Swagger en PROD
-http://localhost:9090/swagger-ui.html
-
-### Detener y limpiar
-```powershell
-docker compose down -v     # -v elimina también el volumen de datos de PostgreSQL
-```
+Incluye tests unitarios, de controller (`@WebMvcTest`) e integración con PostgreSQL real via Testcontainers.
 
 ---
 
-## 4. Validar la infraestructura (Terraform)
+## Despliegue en Nube (AWS)
 
-Valida la sintaxis y consistencia de toda la infra (VPC, ECR, RDS, ECS). **No crea nada en AWS.**
+El proyecto está desplegado y operativo en **AWS us-east-2**.
 
-```powershell
+### URL de producción
+
+**https://d2bmeirll4v0n0.cloudfront.net**
+
+Frontend y API comparten el mismo dominio. El frontend usa rutas relativas (`/api/...`), sin configurar URL absoluta.
+
+### Infraestructura desplegada
+
+| Recurso | Identificador |
+|---------|---------------|
+| CloudFront | `E1LLV553EWBLUX` |
+| S3 Frontend | `customers-api-prod-frontend` |
+| ECR | `customers-api-prod` |
+| ECS Cluster | `customers-api-cluster` |
+| ECS Service | `customers-api-service` |
+| Task Family | `customers-api-task` |
+| ALB | `customers-api-alb` |
+| RDS | PostgreSQL 16.14 |
+
+### Desplegar infraestructura (primera vez)
+
+```bash
 cd infra
-terraform init        # ya ejecutado; descarga el provider AWS
-terraform validate    # -> Success! The configuration is valid.
-terraform fmt -recursive
-cd ..
+cp terraform.tfvars.example terraform.tfvars
+# Editar terraform.tfvars con credenciales y configuración
+terraform init
+terraform plan
+terraform apply
 ```
 
-> ⚠️ **No ejecutes `terraform apply`** salvo que quieras crear recursos reales en AWS
-> (genera costos aunque sea Free Tier, y requiere credenciales `aws configure`).
-> Para esta kata basta con `validate`.
+### Variables de entorno (producción)
+
+Inyectadas en ECS via task definition y Secrets Manager:
+
+| Variable | Origen | Descripción |
+|----------|--------|-------------|
+| `SPRING_PROFILES_ACTIVE` | Task definition | `prod` |
+| `DATABASE_URL` | Task definition | JDBC URL de RDS |
+| `DATABASE_USER` | Task definition | Usuario de BD |
+| `DATABASE_PASSWORD` | Secrets Manager | Contraseña de BD |
+| `JWT_SECRET` | Secrets Manager | Clave de firma JWT |
+| `ADMIN_USERNAME` | Task definition | Usuario admin (`admin`) |
+| `ADMIN_PASSWORD` | Secrets Manager | Contraseña del admin |
+| `CORS_ALLOWED_ORIGINS` | Task definition | Orígenes CORS (`*` en prod) |
 
 ---
 
-## 5. Build + ejecución con el JAR (flujo de la kata)
+## CI/CD con GitHub Actions
 
-Este es el flujo que pide la kata: construir un ejecutable y lanzarlo con `--spring.profiles.active`.
+### Workflows
 
-### 5.1 Construir el JAR
-```powershell
-.\mvnw.cmd clean package -DskipTests
-```
-Genera **`target\customers-api-1.0.0.jar`** (~59 MB, ejecutable y autocontenido).
+| Workflow | Trigger | Jobs |
+|----------|---------|------|
+| **CI** | Push / PR a cualquier rama | Backend (build + test), Frontend (build), Terraform (validate) |
+| **Deploy** | Push a `main` | Backend (ECR + ECS), Frontend (S3 + CloudFront) |
 
-> El enunciado usa `app.jar` como nombre de ejemplo. Si quieres ese nombre exacto:
-> ```powershell
-> Copy-Item target\customers-api-1.0.0.jar target\app.jar
-> ```
-> y sustituye `customers-api-1.0.0.jar` por `app.jar` en los comandos de abajo.
+### Variables de GitHub (Repository Variables)
 
-### 5.2 Ejecutar en modo DEV (H2 en memoria, puerto 8081)
-No necesita base de datos externa.
-```powershell
-java -jar target\customers-api-1.0.0.jar --spring.profiles.active=dev
-```
-Verifica (en otra terminal):
-```powershell
-curl.exe http://localhost:8081/actuator/health
-curl.exe -X POST http://localhost:8081/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Juan Perez\",\"email\":\"juan@email.com\"}"
-curl.exe http://localhost:8081/api/customers
-```
+Configurar en **Settings → Secrets and variables → Actions → Variables**:
 
-### 5.3 Ejecutar en modo PROD (PostgreSQL, puerto 9090)
-El perfil prod **necesita un PostgreSQL en `localhost:5432`**. Levanta solo ese contenedor
-(sin la app, para que el 9090 quede libre para el JAR):
-```powershell
-docker compose up -d postgres
+| Variable | Ejemplo |
+|----------|---------|
+| `AWS_REGION` | `us-east-2` |
+| `AWS_DEPLOY_ROLE_ARN` | `arn:aws:iam::659125558798:role/customers-api-github-deploy` |
+| `ECR_REPOSITORY` | `customers-api-prod` |
+| `CONTAINER_NAME` | `customers-api` |
+| `ECS_TASK_FAMILY` | `customers-api-task` |
+| `ECS_CLUSTER` | `customers-api-cluster` |
+| `ECS_SERVICE` | `customers-api-service` |
+| `S3_BUCKET` | `customers-api-prod-frontend` |
+| `CLOUDFRONT_DISTRIBUTION_ID` | `E1LLV553EWBLUX` |
+
+### Flujo de deploy
+
 ```
-Luego lanza el JAR en prod:
-```powershell
-java -jar target\customers-api-1.0.0.jar --spring.profiles.active=prod
-```
-Verifica:
-```powershell
-curl.exe http://localhost:9090/actuator/health
-curl.exe -X POST http://localhost:9090/api/customers -H "Content-Type: application/json" -d "{\"name\":\"Maria Lopez\",\"email\":\"maria@email.com\"}"
-curl.exe http://localhost:9090/api/customers
-```
-Al terminar, detén el contenedor de PostgreSQL:
-```powershell
-docker compose down -v
+git push origin main
+        │
+        ├──► CI: build + test (paralelo)
+        │
+        └──► Deploy (paralelo)
+              ├── Frontend: npm build → S3 sync → CloudFront invalidation (~20s)
+              └── Backend: docker build → ECR push → ECS rolling deploy (~3min)
 ```
 
-> Las credenciales por defecto de prod (`customers_user` / `customers_pass`, BD `customersdb`)
-> coinciden con las del contenedor `postgres` del `docker-compose.yml`, así que conectan sin
-> configurar nada más. Puedes sobrescribirlas con variables de entorno
-> `DATABASE_URL`, `DATABASE_USER`, `DATABASE_PASSWORD`.
 
-### 5.4 La diferencia entre ambientes (lo que evalúa la kata)
-| | DEV | PROD |
-|---|---|---|
-| Comando | `... --spring.profiles.active=dev` | `... --spring.profiles.active=prod` |
-| Puerto | **8081** | **9090** |
-| Nombre app | `customers-dev` | `customers-prod` |
-| Base de datos | H2 (en memoria) | PostgreSQL |
-| Logs | texto con colores | JSON estructurado |
+## Usuario de Acceso
 
-> Nota sobre el puerto: el enunciado pone 8080 como *ejemplo* para dev; aquí se usa **8081**
-> porque en este equipo Apache ocupa el 8080. Lo que se evalúa es la **diferenciación** entre
-> ambientes, que queda clara igual.
+### Desarrollo local
+
+| Usuario | Contraseña | Rol |
+|---------|------------|-----|
+| `admin` | `admin123` | Administrador (acceso total) |
+
+### Producción (AWS)
+
+| Usuario | Contraseña | Notas |
+|---------|------------|-------|
+| `admin` | *(Secrets Manager)* | Obtener con: |
+
+```bash
+aws secretsmanager get-secret-value \
+  --secret-id customers-api-prod-admin-password \
+  --region us-east-2 \
+  --query SecretString --output text
+```
 
 ---
 
-## Diferencias DEV vs PROD (para la demo)
+## Estructura del Proyecto
 
-| Característica   | DEV (8081)             | PROD (9090)              |
-|-----------------|------------------------|--------------------------|
-| Base de datos   | H2 en memoria          | PostgreSQL 16            |
-| Esquema         | Hibernate `create-drop`| Flyway + Hibernate `validate` |
-| Formato de logs | Texto con colores      | JSON (Logstash)          |
-| Nivel de logs   | DEBUG                  | WARN / INFO              |
-| H2 Console      | ✅ `/h2-console`       | ❌                        |
-| SQL en consola  | ✅                     | ❌                        |
-| Health details  | `always`               | `when-authorized`        |
-
----
-
-## Checklist rápido de verificación
-
-- [ ] `.\mvnw.cmd test` → 10/10 verdes
-- [ ] DEV arranca, POST 201 / GET / 409 / 400 responden, Swagger y H2 console abren
-- [ ] `docker compose up -d --build` → app *healthy* en 9090
-- [ ] PROD: POST/GET funcionan y `docker compose logs app` muestra JSON
-- [ ] `docker compose down -v` limpia todo
-- [ ] `terraform validate` → Success
-
----
-
-## Endpoints de la API
-
-> Todos los endpoints `/api/customers/**` requieren un **JWT** en el header
-> `Authorization: Bearer <token>`. El token se obtiene en `/api/auth/login`.
-
-| Método | Ruta                  | Auth | Descripción                          |
-|--------|-----------------------|:----:|--------------------------------------|
-| POST   | `/api/auth/login`     |  —   | Autentica y devuelve un JWT          |
-| GET    | `/api/auth/me`        |  ✅  | Usuario autenticado actual           |
-| POST   | `/api/customers`      |  ✅  | Crear cliente (email único)          |
-| GET    | `/api/customers`      |  ✅  | Listar todos los clientes            |
-| PUT    | `/api/customers/{id}` |  ✅  | Editar cliente (email único)         |
-| DELETE | `/api/customers/{id}` |  ✅  | Eliminar cliente                     |
-| GET    | `/actuator/health`    |  —   | Estado de salud                      |
-| GET    | `/swagger-ui.html`    |  —   | Documentación interactiva            |
-
-### Códigos de respuesta
-
-| Código | Cuándo                                                        |
-|--------|---------------------------------------------------------------|
-| 200    | Login / listado / edición correctos                           |
-| 201    | Cliente creado                                                |
-| 204    | Cliente eliminado                                             |
-| 400    | Datos inválidos (validación) o cuerpo JSON malformado         |
-| 401    | Credenciales inválidas, o token ausente/expirado en el login  |
-| 403    | Petición a `/api/customers/**` sin token válido               |
-| 404    | Cliente inexistente (editar/eliminar)                         |
-| 409    | Email ya registrado por otro cliente                          |
-
-## Autenticación (JWT)
-
-```powershell
-# 1. Obtener un token (usuario por defecto en DEV: admin / admin123)
-$login = Invoke-RestMethod http://localhost:8081/api/auth/login -Method Post `
-  -Body (@{username='admin';password='admin123'} | ConvertTo-Json) -ContentType 'application/json'
-$tok = $login.token
-
-# 2. Usar el token en los endpoints protegidos
-Invoke-RestMethod http://localhost:8081/api/customers -Headers @{ Authorization = "Bearer $tok" }
 ```
-
-> **Configuración de seguridad** (variables de entorno, con valores por defecto para DEV):
-> - `JWT_SECRET` (mín. 32 caracteres), `JWT_EXPIRATION_SECONDS` (def. 3600)
-> - `ADMIN_USERNAME` / `ADMIN_PASSWORD` (def. `admin` / `admin123`)
-> - `CORS_ALLOWED_ORIGINS` (def. `http://localhost:5173,http://127.0.0.1:5173`)
-> En PROD **siempre** sobrescribe `JWT_SECRET` y las credenciales con secretos reales.
-
-## Frontend
-
-SPA en React + Vite bajo [`frontend/`](frontend/README.md): login con JWT y dashboard
-para crear / listar / editar / eliminar clientes. Arranca con `npm install && npm run dev`
-(puerto 5173) con el backend dev en el 8081. Ver `frontend/README.md`.
+customers-api/
+├── src/main/java/com/bank/customers/
+│   ├── domain/              # Modelo, puertos, servicios de dominio
+│   ├── application/         # DTOs
+│   └── infrastructure/      # Adapters (web, persistence), security, config
+├── src/main/resources/
+│   ├── application.yml      # Config base
+│   ├── application-dev.yml  # Perfil DEV (H2, puerto 8081)
+│   ├── application-prod.yml # Perfil PROD (PostgreSQL, puerto 9090)
+│   └── db/migration/        # Scripts Flyway
+├── frontend/
+│   ├── src/
+│   │   ├── pages/           # Login, Dashboard
+│   │   ├── components/      # CustomerForm, CustomerTable
+│   │   ├── auth/            # AuthContext, ProtectedRoute
+│   │   └── api/             # Cliente Axios
+│   └── .env.production      # VITE_API_URL vacío (rutas relativas en prod)
+├── infra/
+│   ├── main.tf              # Orquestación de módulos
+│   └── modules/             # VPC, ALB, ECS, RDS, S3, CloudFront, ECR, CI/CD, Secrets
+├── .github/workflows/
+│   ├── ci.yml               # Build + test
+│   └── deploy.yml           # Deploy a AWS
+├── Dockerfile               # Multi-stage (builder → layertools → runtime)
+└── docker-compose.yml       # PostgreSQL + app para pruebas locales PROD
+```
