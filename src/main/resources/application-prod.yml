@@ -24,6 +24,8 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+  banner:
+    location: classpath:banner-prod.txt
 
 logging:
   level:
@@ -37,6 +39,3 @@ app:
   security:
     cors:
       allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-
-banner:
-  location: classpath:banner-prod.txt

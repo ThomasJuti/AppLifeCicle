@@ -20,6 +20,8 @@ spring:
     database-platform: org.hibernate.dialect.H2Dialect
   flyway:
     enabled: false
+  banner:
+    location: classpath:banner-dev.txt
 
 management:
   endpoints:
@@ -43,7 +45,4 @@ app:
   message: "Running in DEV mode - H2 In-Memory Database active"
   security:
     cors:
-      allowed-origins: ${CORS_ALLOWED_ORIGINS:*}
-
-banner:
-  location: classpath:banner-dev.txt
+      allowed-origins: "*"
