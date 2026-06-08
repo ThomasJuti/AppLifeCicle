@@ -198,7 +198,7 @@ resource "aws_ecs_task_definition" "app" {
       interval    = 30
       timeout     = 5
       retries     = 3
-      startPeriod = 60
+      startPeriod = 120
     }
   }])
 }
@@ -208,6 +208,14 @@ resource "aws_ecs_service" "app" {
   cluster         = aws_ecs_cluster.main.id
   task_definition = aws_ecs_task_definition.app.arn
   desired_count   = 1
+
+  # Bridge + hostPort fijo (9090) en una sola instancia EC2: no caben 2 tasks a la vez.
+  # Stop-then-start evita conflicto de puerto en deploys.
+  deployment_minimum_healthy_percent = 0
+  deployment_maximum_percent         = 100
+
+  # Spring tarda ~90s; el ALB no debe marcar unhealthy antes de que arranque.
+  health_check_grace_period_seconds = 180
 
   capacity_provider_strategy {
     capacity_provider = aws_ecs_capacity_provider.main.name
