@@ -7,7 +7,6 @@ HEAD_SHA="${HEAD_SHA:?HEAD_SHA required}"
 REPORT_FILE="${REPORT_FILE:?REPORT_FILE required}"
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
-# Modelos vigentes (jun 2026). NO usar gemini-1.5-* ni gemini-2.0-* (retirados → 404).
 GEMINI_MODEL_FALLBACKS="${GEMINI_MODEL_FALLBACKS:-gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3-flash-preview}"
 PR_TITLE="${PR_TITLE:-}"
 PR_BODY="${PR_BODY:-}"

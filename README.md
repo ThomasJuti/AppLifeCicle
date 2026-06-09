@@ -13,15 +13,21 @@
 
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
 - [Características Principales](#-características-principales)
+- [Ciclo de Vida (DEV → PROD)](#-ciclo-de-vida-dev--prod)
 - [Historias de Usuario (Release 1)](#-historias-de-usuario-release-1)
 - [Casos de Prueba (Release 1)](#-casos-de-prueba-release-1)
 - [Tecnologías y Stack](#-tecnologías-y-stack)
 - [Modelo de Datos](#-modelo-de-datos)
 - [API Reference](#-api-reference)
+- [Pruebas de API](#-pruebas-de-api)
 - [Guía de Instalación Local](#-guía-de-instalación-local)
 - [Despliegue en Nube (AWS)](#️-despliegue-en-nube-aws)
+- [Flujo Git y Entrega](#-flujo-git-y-entrega)
 - [CI/CD con GitHub Actions](#-cicd-con-github-actions)
+- [Agente de Revisión de PR](#-agente-de-revisión-de-pr)
+- [Solución de Problemas](#-solución-de-problemas)
 - [Usuario de Acceso](#-usuario-de-acceso)
+- [Estructura del Proyecto](#-estructura-del-proyecto)
 - [Licencia](#-licencia)
 
 ---
@@ -110,6 +116,48 @@ El sistema sigue una **arquitectura hexagonal (ports & adapters)** desacoplada, 
 - Login con redirección declarativa post-autenticación.
 - Dashboard con estadísticas, búsqueda y formulario inline.
 - Token JWT en `localStorage` con interceptor Axios.
+
+---
+
+## Ciclo de Vida (DEV → PROD)
+
+Es la **misma aplicación** (mismo JAR / misma imagen Docker). Lo que cambia es el **perfil de Spring** (`dev` o `prod`):
+
+| Ambiente | Perfil | Backend | Base de datos | Frontend | Credenciales admin |
+|----------|--------|---------|---------------|----------|-------------------|
+| **DEV local** | `dev` | http://localhost:8081 | H2 en memoria | http://localhost:5173 | `admin` / `admin123` |
+| **PROD simulado** | `prod` | http://localhost:9090 | PostgreSQL (Docker Compose) | http://localhost:5173 → proxy | `admin` / `admin123` |
+| **PROD AWS** | `prod` | CloudFront `/api/*` → ALB → ECS | RDS PostgreSQL 16 | https://d2bmeirll4v0n0.cloudfront.net | `admin` / Secrets Manager |
+
+### Banners por perfil
+
+Al arrancar, Spring Boot muestra un banner distinto según el perfil (`spring.banner.location`):
+
+| Perfil | Archivo | Mensaje |
+|--------|---------|---------|
+| DEV | `banner-dev.txt` | `Environment : DEV (H2 In-Memory)` |
+| PROD | `banner-prod.txt` | `Environment : PROD (PostgreSQL)` |
+
+### Comandos por ambiente
+
+```bash
+# DEV — backend H2
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+
+# PROD simulado — Docker Compose
+docker compose up -d --build
+
+# PROD AWS — merge a main dispara GitHub Actions Deploy
+git push origin main
+```
+
+### CORS y frontend en desarrollo
+
+| Contexto | Configuración |
+|----------|---------------|
+| **DEV** | CORS `*` en `application-dev.yml`; proxy Vite (`/api` → `:8081`); `VITE_API_URL` vacío en `.env` |
+| **PROD AWS** | CORS `*` vía `CORS_ALLOWED_ORIGINS`; frontend con rutas relativas (`/api/...`); CloudFront enruta `/api/*` al ALB |
+| **Spring Security** | Si `allowed-origins` es `*`, usa `allowedOriginPatterns("*")` en `SecurityConfig` |
 
 ---
 
@@ -315,6 +363,18 @@ CREATE TABLE customers (
 
 ---
 
+## Pruebas de API
+
+### OpenAPI
+
+Especificación exportada en [`openapi.json`](openapi.json). También disponible en runtime:
+
+| Ambiente | Swagger UI | OpenAPI JSON |
+|----------|------------|--------------|
+| DEV | http://localhost:8081/swagger-ui.html | http://localhost:8081/api-docs |
+| PROD local | http://localhost:9090/swagger-ui.html | http://localhost:9090/api-docs |
+| PROD AWS | https://d2bmeirll4v0n0.cloudfront.net/swagger-ui.html | https://d2bmeirll4v0n0.cloudfront.net/api-docs |
+
 ## Guía de Instalación Local
 
 ### Prerrequisitos
@@ -328,7 +388,7 @@ CREATE TABLE customers (
 
 ```bash
 git clone https://github.com/ThomasJuti/AppLifeCicle.git
-cd customers-api
+cd AppLifeCicle
 ```
 
 ### 2. Backend — Modo DEV (H2 en memoria, puerto 8081)
@@ -355,10 +415,10 @@ npm install
 npm run dev
 ```
 
-Crear `frontend/.env` (opcional, ya apunta a 8081 por defecto):
+Crear `frontend/.env` (recomendado para DEV con proxy Vite):
 
 ```env
-VITE_API_URL=http://localhost:8081
+VITE_API_URL=
 ```
 
 | Recurso | URL |
@@ -441,14 +501,52 @@ Inyectadas en ECS via task definition y Secrets Manager:
 
 ---
 
+## Flujo Git y Entrega
+
+```
+rama feature / QA
+      │
+      ▼
+ Pull Request → main
+      │
+      ├──► CI (build + test + terraform validate)
+      │
+      └──► PR Review Agent (reglas + IA Gemini)
+              │
+              ▼
+         merge a main
+              │
+              ▼
+         Deploy condicional → AWS
+              ├── frontend/ cambió  → S3 + CloudFront
+              └── src/ cambió       → ECR + ECS
+```
+
+Repositorio: **https://github.com/ThomasJuti/AppLifeCicle**
+
+---
+
 ## CI/CD con GitHub Actions
 
 ### Workflows
 
-| Workflow | Trigger | Jobs |
-|----------|---------|------|
-| **CI** | Push / PR a cualquier rama | Backend (build + test), Frontend (build), Terraform (validate) |
-| **Deploy** | Push a `main` | Backend (ECR + ECS), Frontend (S3 + CloudFront) |
+| Workflow | Archivo | Trigger | Qué hace |
+|----------|---------|---------|----------|
+| **CI** | `ci.yml` | Push / PR a cualquier rama | Build + test backend, build frontend, `terraform validate` |
+| **Deploy** | `deploy.yml` | Push a `main`, `workflow_dispatch` | Deploy condicional a AWS (ver abajo) |
+| **PR Review Agent** | `pr-review.yml` | PR opened / synchronize / reopened | Revisión automática del PR (reglas + Gemini) |
+
+### Deploy condicional
+
+El workflow **Deploy** detecta qué cambió con `dorny/paths-filter` y solo ejecuta los jobs necesarios:
+
+| Cambios en el push | Job que corre |
+|--------------------|---------------|
+| Solo `frontend/**` | Frontend → S3 + CloudFront |
+| Solo `src/`, `Dockerfile`, `pom.xml`, `mvnw` | Backend → ECR + ECS |
+| Ambos | Los dos en paralelo |
+| Solo docs / infra / `.github/` (sin rutas anteriores) | Ningún deploy |
+| **Run workflow** manual | Siempre backend + frontend |
 
 ### Variables de GitHub (Repository Variables)
 
@@ -465,21 +563,62 @@ Configurar en **Settings → Secrets and variables → Actions → Variables**:
 | `ECS_SERVICE` | `customers-api-service` |
 | `S3_BUCKET` | `customers-api-prod-frontend` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | `E1LLV553EWBLUX` |
+| `GEMINI_MODEL` | `gemini-2.5-flash` *(opcional, agente PR)* |
+
+### Secrets de GitHub
+
+| Secret | Uso |
+|--------|-----|
+| `GEMINI_API_KEY` | API key de Google AI Studio para revisión con IA en PRs |
+
+> La API key debe estar en **Secrets**, no en Variables (las variables son visibles en el repo).
 
 ### Flujo de deploy
 
 ```
 git push origin main
         │
-        ├──► CI: build + test (paralelo)
+        ├──► CI: build + test (paralelo en PRs y pushes)
         │
-        └──► Deploy (paralelo)
-              ├── Frontend: npm build → S3 sync → CloudFront invalidation (~20s)
-              └── Backend: docker build → ECR push → ECS rolling deploy (~3min)
+        └──► Deploy (solo en main)
+              ├── Detectar cambios (paths-filter)
+              ├── Frontend: npm build → S3 sync → CloudFront invalidation
+              └── Backend: docker build → ECR push → ECS deploy
 ```
 
+---
 
-## Usuario de Acceso
+## Agente de Revisión de PR
+
+Workflow automático que comenta en cada Pull Request con dos capas:
+
+### Capa 1 — Reglas (`pr-review.sh`)
+
+Análisis determinista del diff:
+
+- Archivos sensibles (`.env`, `.tfvars`, `.pem`, credenciales)
+- Patrones de secretos (AWS keys, passwords hardcodeados)
+- Backend sin tests en `src/test/java`
+- Cambios en ECS, Terraform o `deploy.yml`
+
+Si detecta **bloqueantes**, el check del PR falla en rojo.
+
+### Capa 2 — IA Gemini (`pr-review-ai.sh`)
+
+Envía a Gemini el título, descripción y diff del PR (máx. ~30 KB) con un prompt orientado al stack del proyecto. Responde con:
+
+- Resumen, riesgos, calidad/tests, seguridad, infra/deploy, sugerencias
+
+**Configuración:**
+
+1. Secret `GEMINI_API_KEY` en el repo (Google AI Studio)
+2. *(Opcional)* Variable `GEMINI_MODEL` — default `gemini-2.5-flash`
+
+Sin el secret, la capa 2 se omite y solo corren las reglas.
+
+---
+
+
 
 ### Desarrollo local
 
@@ -525,9 +664,21 @@ customers-api/
 ├── infra/
 │   ├── main.tf              # Orquestación de módulos
 │   └── modules/             # VPC, ALB, ECS, RDS, S3, CloudFront, ECR, CI/CD, Secrets
-├── .github/workflows/
-│   ├── ci.yml               # Build + test
-│   └── deploy.yml           # Deploy a AWS
+├── .github/
+│   ├── workflows/
+│   │   ├── ci.yml               # Build + test
+│   │   ├── deploy.yml           # Deploy condicional a AWS
+│   │   └── pr-review.yml        # Agente revisión PR (reglas + Gemini)
+│   └── scripts/
+│       ├── pr-review.sh         # Capa 1: reglas
+│       └── pr-review-ai.sh      # Capa 2: IA Gemini
+├── openapi.json               # Especificación OpenAPI exportada
 ├── Dockerfile               # Multi-stage (builder → layertools → runtime)
 └── docker-compose.yml       # PostgreSQL + app para pruebas locales PROD
 ```
+
+---
+
+## Licencia
+
+Proyecto académico — Kata LifeCicleApp. Uso libre con fines educativos.
