@@ -11,24 +11,23 @@
 
 ## Tabla de Contenidos
 
-- [Arquitectura del Sistema](#-arquitectura-del-sistema)
-- [Características Principales](#-características-principales)
-- [Ciclo de Vida (DEV → PROD)](#-ciclo-de-vida-dev--prod)
-- [Historias de Usuario (Release 1)](#-historias-de-usuario-release-1)
-- [Casos de Prueba (Release 1)](#-casos-de-prueba-release-1)
-- [Tecnologías y Stack](#-tecnologías-y-stack)
-- [Modelo de Datos](#-modelo-de-datos)
-- [API Reference](#-api-reference)
-- [Pruebas de API](#-pruebas-de-api)
-- [Guía de Instalación Local](#-guía-de-instalación-local)
-- [Despliegue en Nube (AWS)](#️-despliegue-en-nube-aws)
-- [Flujo Git y Entrega](#-flujo-git-y-entrega)
-- [CI/CD con GitHub Actions](#-cicd-con-github-actions)
-- [Agente de Revisión de PR](#-agente-de-revisión-de-pr)
-- [Solución de Problemas](#-solución-de-problemas)
-- [Usuario de Acceso](#-usuario-de-acceso)
-- [Estructura del Proyecto](#-estructura-del-proyecto)
-- [Licencia](#-licencia)
+- [Arquitectura del Sistema](#arquitectura-del-sistema)
+- [Características Principales](#características-principales)
+- [Ciclo de Vida (DEV → PROD)](#ciclo-de-vida-dev--prod)
+- [Historias de Usuario (Release 1)](#historias-de-usuario-release-1)
+- [Casos de Prueba (Release 1)](#casos-de-prueba-release-1)
+- [Tecnologías y Stack](#tecnologías-y-stack)
+- [Modelo de Datos](#modelo-de-datos)
+- [API Reference](#api-reference)
+- [Pruebas de API](#pruebas-de-api)
+- [Guía de Instalación Local](#guía-de-instalación-local)
+- [Despliegue en Nube (AWS)](#despliegue-en-nube-aws)
+- [Flujo Git y Entrega](#flujo-git-y-entrega)
+- [CI/CD con GitHub Actions](#cicd-con-github-actions)
+- [Agente de Revisión de PR](#agente-de-revisión-de-pr)
+- [Usuario de Acceso](#usuario-de-acceso)
+- [Estructura del Proyecto](#estructura-del-proyecto)
+- [Licencia](#licencia)
 
 ---
 
@@ -617,8 +616,6 @@ Envía a Gemini el título, descripción y diff del PR (máx. ~30 KB) con un pro
 Sin el secret, la capa 2 se omite y solo corren las reglas.
 
 ---
-
-
 
 ### Desarrollo local
 
