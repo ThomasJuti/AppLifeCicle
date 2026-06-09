@@ -7,7 +7,8 @@ HEAD_SHA="${HEAD_SHA:?HEAD_SHA required}"
 REPORT_FILE="${REPORT_FILE:?REPORT_FILE required}"
 GEMINI_API_KEY="${GEMINI_API_KEY:-}"
 GEMINI_MODEL="${GEMINI_MODEL:-gemini-2.5-flash}"
-GEMINI_MODEL_FALLBACKS="${GEMINI_MODEL_FALLBACKS:-gemini-2.5-flash,gemini-2.0-flash-lite,gemini-1.5-flash}"
+# Modelos vigentes (jun 2026). NO usar gemini-1.5-* ni gemini-2.0-* (retirados → 404).
+GEMINI_MODEL_FALLBACKS="${GEMINI_MODEL_FALLBACKS:-gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3-flash-preview}"
 PR_TITLE="${PR_TITLE:-}"
 PR_BODY="${PR_BODY:-}"
 
@@ -90,7 +91,8 @@ call_gemini() {
 MODELS=("$GEMINI_MODEL")
 IFS=',' read -ra FALLBACKS <<< "$GEMINI_MODEL_FALLBACKS"
 for m in "${FALLBACKS[@]}"; do
-  [[ "$m" == "$GEMINI_MODEL" ]] && continue
+  m="${m// /}"
+  [[ -z "$m" || "$m" == "$GEMINI_MODEL" ]] && continue
   MODELS+=("$m")
 done
 
@@ -98,8 +100,10 @@ BODY=""
 CODE=""
 USED_MODEL=""
 LAST_ERROR=""
+TRIED=()
 
 for model in "${MODELS[@]}"; do
+  TRIED+=("$model")
   for attempt in 1 2; do
     HTTP=$(call_gemini "$model")
     BODY=$(echo "$HTTP" | sed '$d')
@@ -117,21 +121,29 @@ for model in "${MODELS[@]}"; do
       continue
     fi
 
-    # 404/400: probar siguiente modelo; 429 agotado: también siguiente
     break
   done
 done
 
 if [[ "$CODE" != "200" ]]; then
+  TRIED_LIST=$(IFS=', '; echo "${TRIED[*]}")
   {
     echo "### Revisión con IA"
     echo ""
-    echo "_Error al llamar a Gemini (HTTP ${CODE}). Cuota agotada o plan sin acceso al modelo._"
+    if [[ "$CODE" == "404" ]]; then
+      echo "_Error: modelo no encontrado (HTTP 404). Los modelos \`gemini-1.5-*\` y \`gemini-2.0-*\` fueron retirados por Google._"
+    elif [[ "$CODE" == "429" ]]; then
+      echo "_Error: cuota agotada (HTTP 429) en todos los modelos probados._"
+    else
+      echo "_Error al llamar a Gemini (HTTP ${CODE})._"
+    fi
+    echo ""
+    echo "**Modelos probados:** \`${TRIED_LIST}\`"
     echo ""
     echo "**Qué hacer:**"
-    echo "1. En [Google AI Studio](https://aistudio.google.com/) verifica cuota y que la API esté habilitada."
-    echo "2. Si el error dice \`limit: 0\`, puede hacer falta **vincular facturación** en Google Cloud (el tier gratuito sigue siendo gratis hasta el límite)."
-    echo "3. Opcional: variable de repo \`GEMINI_MODEL\` (p. ej. \`gemini-2.5-flash\` o \`gemini-1.5-flash\`)."
+    echo "1. Variable de repo \`GEMINI_MODEL\` → \`gemini-2.5-flash\` (recomendado)."
+    echo "2. Verifica cuota en [Google AI Studio](https://aistudio.google.com/)."
+    echo "3. Si ves \`limit: 0\`, vincula facturación en Google Cloud (el free tier sigue siendo gratis hasta el límite)."
     echo ""
     echo "<details><summary>Detalle</summary>"
     echo ""
