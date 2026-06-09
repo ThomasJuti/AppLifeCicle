@@ -14,6 +14,7 @@
 - [Arquitectura del Sistema](#-arquitectura-del-sistema)
 - [Características Principales](#-características-principales)
 - [Historias de Usuario (Release 1)](#-historias-de-usuario-release-1)
+- [Casos de Prueba (Release 1)](#-casos-de-prueba-release-1)
 - [Tecnologías y Stack](#-tecnologías-y-stack)
 - [Modelo de Datos](#-modelo-de-datos)
 - [API Reference](#-api-reference)
@@ -138,6 +139,39 @@ El sistema sigue una **arquitectura hexagonal (ports & adapters)** desacoplada, 
 | | | | | | 3 | Cliente inexistente | Dado que el cliente ya fue eliminado por otro proceso | Cuando intente eliminarlo | Entonces el sistema mostrará un mensaje de error |
 | **Cerrar sesión** | HU-R1-007 | Como administrador autenticado | Quiero cerrar mi sesión | Para proteger el acceso a la consola | 1 | Logout exitoso | Dado que el administrador tiene sesión activa | Cuando presione "Salir" | Entonces el sistema invalidará la sesión local, eliminará el token y redirigirá al login |
 | | | | | | 2 | Acceso posterior al logout | Dado que el administrador cerró sesión | Cuando intente acceder al Dashboard | Entonces el sistema exigirá autenticación nuevamente |
+
+---
+
+## Casos de Prueba (Release 1)
+
+Especificación Gherkin (Dado / Cuando / Entonces) en formato tabla.
+
+| | **Identificador (ID) de la historia** | **Rol** | **Característica / Funcionalidad** | **Razón / Resultado** | **Número (#) de escenario** | **Criterio de aceptación** | **Contexto** | **Evento** | **Resultado / Comportamiento esperado** |
+|---|---|---|---|---|---|---|---|---|---|
+| **Iniciar sesión en la consola** | HU-R1-001 | Como administrador del banco | Quiero iniciar sesión con usuario y contraseña | Para acceder de forma segura a la consola de gestión de clientes | 1 | Login exitoso | Dado que el administrador está en la pantalla de login | Cuando ingresa usuario y contraseña correctos y presiona "Entrar a la consola" | Entonces el sistema autentica al administrador, emite un token JWT y redirige al Dashboard |
+| | | | | | 2 | Credenciales inválidas | Dado que el administrador está en la pantalla de login | Cuando ingresa credenciales incorrectas e intenta iniciar sesión | Entonces el sistema muestra un mensaje de error y no permite el acceso |
+| | | | | | 3 | Acceso a ruta protegida sin sesión | Dado que el usuario no ha iniciado sesión | Cuando intenta acceder al Dashboard (`/`) | Entonces el sistema lo redirige a la pantalla de login |
+| | | | | | 4 | Usuario ya autenticado | Dado que el usuario tiene una sesión activa | Cuando accede a `/login` | Entonces el sistema lo redirige automáticamente al Dashboard |
+| **Visualizar cartera de clientes** | HU-R1-002 | Como administrador autenticado | Quiero visualizar la lista de clientes registrados | Para consultar el estado actual de la cartera | 1 | Listado de clientes | Dado que el administrador ha iniciado sesión y existen clientes registrados | Cuando accede al Dashboard | Entonces el sistema muestra la tabla con nombre, email y fecha de registro |
+| | | | | | 2 | Estadísticas del panel | Dado que existen clientes registrados | Cuando se carga el Dashboard | Entonces el sistema muestra el total de clientes, el último registro y la cantidad visible |
+| | | | | | 3 | Cartera vacía | Dado que no existen clientes registrados | Cuando accede al Dashboard | Entonces el sistema muestra la cartera vacía y estadísticas en cero |
+| | | | | | 4 | Refrescar listado | Dado que el administrador está en el Dashboard | Cuando presiona "Refrescar" | Entonces el sistema consulta la API y actualiza la lista de clientes |
+| **Buscar clientes** | HU-R1-003 | Como administrador autenticado | Quiero buscar clientes por nombre o email | Para localizar rápidamente un cliente en la cartera | 1 | Búsqueda por nombre | Dado que existen clientes registrados | Cuando escribe un texto que coincide con un nombre en el buscador | Entonces el sistema filtra la tabla mostrando solo los clientes coincidentes |
+| | | | | | 2 | Búsqueda por email | Dado que existen clientes registrados | Cuando escribe un texto que coincide con un email en el buscador | Entonces el sistema filtra la tabla mostrando solo los clientes coincidentes |
+| | | | | | 3 | Búsqueda sin resultados | Dado que no hay clientes que coincidan con el criterio | Cuando realiza una búsqueda | Entonces el sistema muestra la tabla vacía e indica 0 coincidencias |
+| | | | | | 4 | Limpiar búsqueda | Dado que hay un filtro de búsqueda activo | Cuando borra el texto del buscador | Entonces el sistema muestra nuevamente todos los clientes |
+| **Registrar nuevo cliente** | HU-R1-004 | Como administrador autenticado | Quiero registrar un nuevo cliente | Para ampliar la cartera del banco | 1 | Creación exitosa | Dado que el administrador está en el Dashboard | Cuando completa nombre y email válidos y presiona "Crear cliente" | Entonces el sistema registra al cliente, muestra "Cliente creado" y lo incluye en la lista |
+| | | | | | 2 | Validación de campos vacíos | Dado que el administrador intenta crear un cliente | Cuando deja el nombre o email vacíos | Entonces el sistema no envía el formulario y solicita datos válidos |
+| | | | | | 3 | Validación de formato inválido | Dado que el administrador intenta crear un cliente | Cuando ingresa un email con formato inválido o nombre menor a 2 caracteres | Entonces el sistema no envía el formulario y solicita datos válidos |
+| | | | | | 4 | Email duplicado | Dado que ya existe un cliente con el mismo email | Cuando intenta registrar un cliente con ese email | Entonces el sistema responde HTTP 409 y muestra un mensaje de error |
+| **Editar cliente** | HU-R1-005 | Como administrador autenticado | Quiero modificar los datos de un cliente existente | Para mantener la información de la cartera actualizada | 1 | Edición exitosa | Dado que existe un cliente en la cartera | Cuando selecciona editar, modifica los datos y presiona "Guardar cambios" | Entonces el sistema actualiza al cliente, muestra "Cliente actualizado" y refleja los cambios en la tabla |
+| | | | | | 2 | Cancelar edición | Dado que el administrador está editando un cliente | Cuando presiona "Cancelar" | Entonces el sistema descarta los cambios y vuelve al modo "Nuevo cliente" |
+| | | | | | 3 | Email duplicado en edición | Dado que otro cliente ya usa el email ingresado | Cuando intenta guardar los cambios | Entonces el sistema rechaza la actualización y muestra un mensaje de error |
+| **Eliminar cliente** | HU-R1-006 | Como administrador autenticado | Quiero eliminar un cliente de la cartera | Para dar de baja registros que ya no aplican | 1 | Eliminación confirmada | Dado que existe un cliente en la cartera | Cuando selecciona eliminar y confirma la acción | Entonces el sistema elimina al cliente, muestra confirmación y lo quita de la lista |
+| | | | | | 2 | Cancelar eliminación | Dado que el administrador inició la eliminación | Cuando cancela el diálogo de confirmación | Entonces el sistema no elimina al cliente |
+| | | | | | 3 | Cliente inexistente | Dado que el cliente ya fue eliminado previamente | Cuando intenta eliminarlo | Entonces el sistema muestra un mensaje de error |
+| **Cerrar sesión** | HU-R1-007 | Como administrador autenticado | Quiero cerrar mi sesión | Para proteger el acceso a la consola | 1 | Logout exitoso | Dado que el administrador tiene sesión activa en el Dashboard | Cuando presiona "Salir" | Entonces el sistema elimina el token JWT y redirige al login |
+| | | | | | 2 | Acceso posterior al logout | Dado que el administrador cerró sesión | Cuando intenta acceder al Dashboard | Entonces el sistema exige autenticación y redirige al login |
 
 ---
 
