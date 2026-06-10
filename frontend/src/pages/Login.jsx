@@ -35,7 +35,7 @@ export default function Login() {
       <aside className="auth-brand">
         <div className="auth-brand-hero">
           <h1 className="auth-headline">
-            Life<em>Cicle</em>App
+            Life<em>Cicle</em>App PROD
           </h1>
           <p className="auth-tagline">Gestión de clientes</p>
         </div>
